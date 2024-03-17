@@ -1,1 +1,4 @@
 Summarizer.pkl
+__pycache__
+tokenizer.pkl
+model.pkl
