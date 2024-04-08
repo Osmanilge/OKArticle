@@ -1,6 +1,9 @@
 from transformers import pipeline
 from transformers import SummarizationPipeline
+from Modules.similarity import calculate_similarity
 import re
+import copy
+
 def count_words(text):
     words = text.split()
     return len(words)
@@ -24,9 +27,17 @@ class ArticleTree:
     def print_count_words(self):
         self.root.print_count_words("")
     
+    def get_all_paragraph_nodes_as_list(self, threshold=7):
+        self.calculate_count_of_words()
+        return self.root.get_all_paragraph_nodes(threshold)
+    
+    def get_title_of_article(self):
+        return self.root.data
+    
     def summarize_parts(self, ratio, tokenizer, model, elasticityOfLength = 0.4):
         self.root.tokenize_node(tokenizer)
-
+        self.calculate_count_of_words()
+        
         allText = ""
         for child in self.root.children:
             allText += child.data + '\n' + child.summarize_article_with_ratio(ratio, tokenizer, model, elasticityOfLength, "") + '\n'
@@ -35,12 +46,31 @@ class ArticleTree:
     
     def summarize_parts_as_list(self, ratio, tokenizer, model, elasticityOfLength = 0.4):
         self.root.tokenize_node(tokenizer)
+        self.calculate_count_of_words()
 
         parts = []
         for child in self.root.children:
             parts.append([child.data, child.summarize_article_with_ratio(ratio, tokenizer, model, elasticityOfLength, "")])
 
         return parts
+
+    def merge_trees(self, otherTree, threshold=0.6, rootCheckedForThreshold=True):
+        self.calculate_count_of_words()
+        mergedTree = copy.deepcopy(self)
+        if rootCheckedForThreshold:
+            if get_similarity(self.root.get_text_from_node(7),otherTree.root.get_text_from_node(7)) < threshold:
+                print("There is no similarity!! ", get_similarity(self.root.get_text_from_node(7),otherTree.root.get_text_from_node(7)))
+                return mergedTree
+        
+        nodes = otherTree.get_all_paragraph_nodes_as_list()
+        for node in nodes:
+            print("new node")
+            for child in mergedTree.root.children:
+                print("new title")
+                if child.put_text(node, threshold):
+                    break
+        
+        return mergedTree                
 
 
 class Node:
@@ -79,6 +109,7 @@ class Node:
         print(path," ",self.data)
         for child in self.children:
             child.print_article_tree(path+".")
+            
     
     def get_text_from_node(self,threshold = 0):
         result = ""
@@ -130,6 +161,50 @@ class Node:
             
         for child in self.children:
             child.print_count_words(path+".")
+
+    def get_all_paragraph_nodes(self, threshold=7):
+        paragraphs = []
+
+        if self.id is None:
+            text = self.get_text_from_node(threshold)
+            if "" != text:
+                paragraphs.append(self)
+        else:
+            for child in self.children:
+                paragraphs.extend(child.get_all_paragraph_nodes(threshold))
+
+        return paragraphs
+    
+    def put_text(self, node, threshold):
+        if(self.id is None):
+            return False
+        
+        maxScore = 0
+        maxindex = 0
+        maxtext = ""
+        text2 = node.get_text_from_node(7)
+        print("new depth")
+        #print("text1:\n",self.get_text_from_node(7),"\n","text2:\n",text2,"\n")
+        for i in range(len(self.children)):
+            text1 = self.children[i].get_text_from_node(7)
+            score = get_similarity(text1,text2)
+            if maxScore < score:
+                maxindex = i
+                maxScore = score
+                maxtext = text1
+        
+        print("maxScore:", maxScore, maxindex)
+        if(maxScore > threshold):
+            print("INFO: A node inserted.")
+            print("text1:\n",maxtext)
+            print("text2:\n",text2)
+            self.children.insert(maxindex + 1, node)
+            return True
+        
+        elif(maxScore > 0.3):
+            return self.children[i].put_text(node, threshold)
+        
+        return False
         
     def summarize_article_with_ratio(self, ratio, tokenizer, model, elasticityOfLength, id_path):
         print("SummarizeR",self.depth," ",id_path + self.id)
@@ -215,6 +290,7 @@ class Node:
 
                 return result
 
+
 def divide_to_strings(string, size):
     words = string.split()
     groups = []
@@ -253,3 +329,13 @@ def detokenize_text(summary_ids, tokenizer):
         print("!Error occurred while detokenize:", e)
         print(summary_ids,"\n")
     return result
+
+def get_similarity(text1, text2):
+    score = 0
+    try:
+        score = calculate_similarity([text1,text2])
+    except Exception as e:
+        print("!Error occurred while calculating similarity:", e)
+        print("text1 ::",text1,"\n","text2 ::",text2,"\n")
+    return score
+    
