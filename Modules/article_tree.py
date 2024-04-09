@@ -2,7 +2,6 @@ from transformers import pipeline
 from transformers import SummarizationPipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from Modules.similarity import calculate_similarity
 import re
 import copy
 
@@ -56,12 +55,12 @@ class ArticleTree:
 
         return parts
 
-    def merge_trees(self, otherTree, threshold=0.6, rootCheckedForThreshold=True):
+    def merge_trees(self, otherTree, model_sim, threshold=0.6, rootCheckedForThreshold=True):
         self.calculate_count_of_words()
         mergedTree = copy.deepcopy(self)
         if rootCheckedForThreshold:
-            if get_similarity(self.root.get_text_from_node(7),otherTree.root.get_text_from_node(7)) < threshold:
-                print("There is no similarity!! ", get_similarity(self.root.get_text_from_node(7),otherTree.root.get_text_from_node(7)))
+            if get_similarity(self.root.get_text_from_node(7),otherTree.root.get_text_from_node(7), model_sim) < threshold:
+                print("There is no similarity!! ", get_similarity(self.root.get_text_from_node(7), otherTree.root.get_text_from_node(7), model_sim))
                 return mergedTree
         
         nodes = otherTree.get_all_paragraph_nodes_as_list()
@@ -69,12 +68,12 @@ class ArticleTree:
             print("new node")
             for child in mergedTree.root.children:
                 print("new title")
-                if child.put_text(node, threshold):
+                if child.put_text(node, threshold, model_sim):
                     break
         
         return mergedTree                
 
-    def get_context(self, contextString, n, threshold1=0.3, threshold2=0.65):
+    def get_context(self, contextString, n, model_sim, threshold1=0.3, threshold2=0.65):
         self.calculate_count_of_words()
         nodes = self.get_all_paragraph_nodes_as_list()
         node_similarity_list = []
@@ -91,7 +90,7 @@ class ArticleTree:
 
         result = []
         for text, sim in node_similarity_list:
-            sim2 = get_similarity(text, contextString)
+            sim2 = get_similarity(text, contextString, model_sim)
             if sim2 > threshold2 or sim > threshold1:
                 result.append((text, sim, sim2)) 
 
@@ -200,7 +199,7 @@ class Node:
 
         return paragraphs
     
-    def put_text(self, node, threshold):
+    def put_text(self, node, threshold, model_sim):
         if(self.id is None):
             return False
         
@@ -212,7 +211,7 @@ class Node:
         #print("text1:\n",self.get_text_from_node(7),"\n","text2:\n",text2,"\n")
         for i in range(len(self.children)):
             text1 = self.children[i].get_text_from_node(7)
-            score = get_similarity(text1,text2)
+            score = get_similarity(text1, text2, model_sim)
             if maxScore < score:
                 maxindex = i
                 maxScore = score
@@ -227,7 +226,7 @@ class Node:
             return True
         
         elif(maxScore > 0.3):
-            return self.children[i].put_text(node, threshold)
+            return self.children[i].put_text(node, threshold, model_sim)
         
         return False
         
@@ -355,10 +354,11 @@ def detokenize_text(summary_ids, tokenizer):
         print(summary_ids,"\n")
     return result
 
-def get_similarity(text1, text2):
+def get_similarity(text1, text2, model_sim):
     score = 0
     try:
-        score = calculate_similarity([text1,text2])
+        embeddings = model_sim.encode([text1,text2])
+        score = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
     except Exception as e:
         print("!Error occurred while calculating similarity:", e)
         print("text1 ::",text1,"\n","text2 ::",text2,"\n")
