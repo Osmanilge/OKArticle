@@ -1,5 +1,7 @@
 from transformers import pipeline
 from transformers import SummarizationPipeline
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from Modules.similarity import calculate_similarity
 import re
 import copy
@@ -72,6 +74,29 @@ class ArticleTree:
         
         return mergedTree                
 
+    def get_context(self, contextString, n, threshold1=0.3, threshold2=0.65):
+        self.calculate_count_of_words()
+        nodes = self.get_all_paragraph_nodes_as_list()
+        node_similarity_list = []
+        
+        for node in nodes:
+            sim = find_similarity_tf_idf(contextString, node.get_text_from_node(7))
+            node_similarity_list.append((node.get_text_from_node(7), sim))
+
+            if len(node_similarity_list) > n:
+                node_similarity_list.sort(key=lambda x: x[1]) 
+                node_similarity_list.pop(0) 
+
+        node_similarity_list.sort(key=lambda x: x[1], reverse=True)
+
+        result = []
+        for text, sim in node_similarity_list:
+            sim2 = get_similarity(text, contextString)
+            if sim2 > threshold2 or sim > threshold1:
+                result.append((text, sim, sim2)) 
+
+
+        return result
 
 class Node:
     def __init__(self, depth, id, data):
@@ -338,4 +363,13 @@ def get_similarity(text1, text2):
         print("!Error occurred while calculating similarity:", e)
         print("text1 ::",text1,"\n","text2 ::",text2,"\n")
     return score
-    
+
+def find_similarity_tf_idf(text1, text2):
+    # TF-IDF vektörlerini oluşturma
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform([text1, text2])
+
+    # Kosinüs benzerliğini hesaplama
+    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+
+    return cosine_sim[0][0]
